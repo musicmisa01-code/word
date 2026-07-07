@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>音楽ワードさがし</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: sans-serif;
+  text-align: center;
+  background: #f5f7ff;
+  margin: 20px;
+  color: #333;
+}
+
+h1 {
+  margin-bottom: 10px;
+}
+
+#levelButtons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+
+button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-size: 16px;
+  cursor: pointer;
+  background: #5c6bc0;
+  color: white;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+button.active {
+  background: #3949ab;
+}
+
+#remaining {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 10px 0 20px;
+}
+
+#wordList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 700px;
+  margin: 0 auto 25px;
+}
+
+.word {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  padding: 6px 12px;
+  transition: 0.2s;
+}
+
+.word.found {
+  text-decoration: line-through;
+  color: #999;
+}
+
+#grid {
+  display: grid;
+  gap: 2px;
+  justify-content: center;
+  margin: 0 auto 30px;
+  touch-action: none;
+}
+
+.cell {
+  width: 38px;
+  height: 38px;
+  background: white;
+  border: 1px solid #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  user-select: none;
+}
+
+.selected {
+  background: #ffe082 !important;
+}
+
+#retryButton {
+  display: none;
+  margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+  .cell {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<h1>🎵 音楽ワードさがし 🎵</h1>
+
+<div id="levelButtons">
+  <button onclick="startGame('beginner')" id="btn-beginner">初級</button>
+  <button onclick="startGame('intermediate')" id="btn-intermediate">中級</button>
+  <button onclick="startGame('advanced')" id="btn-advanced">上級</button>
+</div>
+
+<p id="remaining">あと0個！</p>
+
+<div id="wordList"></div>
+
+<div id="grid"></div>
+
+<button id="retryButton">もう一度！</button>
+
+<audio id="dragSound" src="drag.mp3"></audio>
+<audio id="levelSound" src="level.mp3"></audio>
+<audio id="retrySound" src="retry.mp3"></audio>
+<audio id="clearSound" src="clear.mp3"></audio>
+
+
+<script>
+
+function playSound(id) {
+
+  const sound = document.getElementById(id);
+
+  if (!sound) return;
+
+  sound.currentTime = 0;
+
+  sound.play().catch(() => {});
+}
+
+const levels = {
+  beginner: {
+    size: 8,
+    directions: [[0, 1]],
+    words: [
+      "ピアノ",
+      "タイ",
+      "スラー",
+      "リズム",
+      "フィーネ",
+      "フォルテ"
+    ]
+  },
+
+  intermediate: {
+    size: 10,
+    directions: [
+      [0, 1],
+      [1, 0]
+    ],
+    words: [
+      "フォルテ",
+      "ピアノ",
+      "スラー",
+      "レガート",
+      "アレグロ",
+      "リズム",
+      "リピート",
+      "フィーネ"
+    ]
+  },
+
+  advanced: {
+    size: 12,
+    directions: [
+      [0, 1],
+      [1, 0]
+    ],
+    words: [
+      "スタッカート",
+      "クレッシェンド",
+      "リタルダンド",
+      "モデラート",
+      "フェルマータ",
+      "レガート",
+      "リピート",
+      "アレグロ"
+    ]
+  }
+};
+
+const katakana = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン";
+
+const colors = [
+  "#ffb3ba",
+  "#ffdfba",
+  "#ffffba",
+  "#baffc9",
+  "#bae1ff",
+  "#d5baff",
+  "#ffc8dd",
+  "#caffbf",
+  "#a0c4ff",
+  "#ffd6a5"
+];
+
+let currentLevel = "beginner";
+let gridSize = 8;
+let directions = [];
+let words = [];
+
+let gridData = [];
+let foundCount = 0;
+let colorIndex = 0;
+
+let selecting = false;
+let selected = [];
+let startCell = null;
+
+function startGame(level) {
+
+if (level !== currentLevel) {
+  playSound("levelSound");
+}
+
+  currentLevel = level;
+
+  gridSize = levels[level].size;
+  directions = levels[level].directions;
+  words = [...levels[level].words];
+
+  foundCount = 0;
+  colorIndex = 0;
+
+  gridData = Array.from(
+    { length: gridSize },
+    () => Array(gridSize).fill("")
+  );
+
+  document.getElementById("grid").innerHTML = "";
+  document.getElementById("wordList").innerHTML = "";
+  document.getElementById("retryButton").style.display = "none";
+
+  document.querySelectorAll("#levelButtons button")
+    .forEach(btn => btn.classList.remove("active"));
+
+  document.getElementById(`btn-${level}`)
+    .classList.add("active");
+
+  words
+    .slice()
+    .sort((a, b) => b.length - a.length)
+    .forEach(placeWord);
+
+  fillEmpty();
+  renderWordList();
+  renderGrid();
+  updateRemaining();
+}
+
+function placeWord(word) {
+
+  let placed = false;
+  let attempts = 0;
+
+  while (!placed && attempts < 500) {
+
+    attempts++;
+
+    const [dr, dc] =
+      directions[Math.floor(Math.random() * directions.length)];
+
+    const row = Math.floor(Math.random() * gridSize);
+    const col = Math.floor(Math.random() * gridSize);
+
+    if (canPlace(word, row, col, dr, dc)) {
+
+      for (let i = 0; i < word.length; i++) {
+
+        const r = row + dr * i;
+        const c = col + dc * i;
+
+        gridData[r][c] = word[i];
+      }
+
+      placed = true;
+    }
+  }
+}
+
+function canPlace(word, row, col, dr, dc) {
+
+  for (let i = 0; i < word.length; i++) {
+
+    const r = row + dr * i;
+    const c = col + dc * i;
+
+    if (
+      r < 0 || r >= gridSize ||
+      c < 0 || c >= gridSize ||
+      gridData[r][c] !== ""
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function fillEmpty() {
+
+  for (let r = 0; r < gridSize; r++) {
+
+    for (let c = 0; c < gridSize; c++) {
+
+      if (gridData[r][c] === "") {
+
+        gridData[r][c] =
+          katakana[Math.floor(Math.random() * katakana.length)];
+      }
+    }
+  }
+}
+
+function renderWordList() {
+
+  const list = document.getElementById("wordList");
+
+  words.forEach(word => {
+
+    const div = document.createElement("div");
+    div.className = "word";
+    div.id = `word-${word}`;
+    div.textContent = word;
+
+    list.appendChild(div);
+  });
+}
+
+function renderGrid() {
+
+  const grid = document.getElementById("grid");
+
+  grid.style.gridTemplateColumns =
+    `repeat(${gridSize}, minmax(32px, 38px))`;
+
+  for (let r = 0; r < gridSize; r++) {
+
+    for (let c = 0; c < gridSize; c++) {
+
+      const cell = document.createElement("div");
+
+      cell.className = "cell";
+      cell.textContent = gridData[r][c];
+
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+
+      cell.addEventListener("pointerdown", pointerDown);
+      cell.addEventListener("pointerenter", pointerEnter);
+
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function pointerDown() {
+
+playSound("dragSound");
+
+
+  clearSelection();
+
+  selecting = true;
+  startCell = this;
+
+  addCell(this);
+}
+
+function pointerEnter() {
+
+  if (!selecting) return;
+
+  updateSelection(this);
+}
+
+document.addEventListener("pointerup", () => {
+
+  if (!selecting) return;
+
+  selecting = false;
+  checkAnswer();
+});
+
+function updateSelection(endCell) {
+
+  clearSelection();
+  addCell(startCell);
+
+  const sr = Number(startCell.dataset.row);
+  const sc = Number(startCell.dataset.col);
+
+  const er = Number(endCell.dataset.row);
+  const ec = Number(endCell.dataset.col);
+
+  const sameRow = sr === er;
+  const sameCol = sc === ec;
+
+  if (!sameRow && !sameCol) return;
+
+  const dr = sameCol ? (er > sr ? 1 : -1) : 0;
+  const dc = sameRow ? (ec > sc ? 1 : -1) : 0;
+
+  let r = sr;
+  let c = sc;
+
+  while (true) {
+
+    const cell = document.querySelector(
+      `[data-row="${r}"][data-col="${c}"]`
+    );
+
+    addCell(cell);
+
+    if (r === er && c === ec) break;
+
+    r += dr;
+    c += dc;
+  }
+}
+
+function addCell(cell) {
+
+  if (!selected.includes(cell)) {
+
+    selected.push(cell);
+    cell.classList.add("selected");
+  }
+}
+
+function clearSelection() {
+
+  selected.forEach(cell => {
+    cell.classList.remove("selected");
+  });
+
+  selected = [];
+}
+
+function checkAnswer() {
+
+  const answer = selected
+    .map(cell => cell.textContent)
+    .join("");
+
+  if (words.includes(answer)) {
+
+    const color = colors[colorIndex % colors.length];
+    colorIndex++;
+
+    selected.forEach(cell => {
+
+      cell.classList.remove("selected");
+      cell.style.background = color;
+    });
+
+    document
+      .getElementById(`word-${answer}`)
+      .classList.add("found");
+
+    words = words.filter(word => word !== answer);
+
+    foundCount++;
+
+    updateRemaining();
+
+    if (words.length === 0) {
+
+      document.getElementById("remaining").textContent =
+        "🎉 クリア！";
+
+      document.getElementById("retryButton").style.display =
+        "inline-block";
+
+      
+playSound("clearSound");
+    }
+
+  } else {
+    clearSelection();
+  }
+
+  selected = [];
+}
+
+function updateRemaining() {
+
+  document.getElementById("remaining").textContent =
+    `あと ${words.length} 個！`;
+}
+
+document
+  .getElementById("retryButton")
+
+  .addEventListener("click", () => {
+
+  playSound("retrySound");
+
+  startGame(currentLevel);
+});
+
+startGame("beginner");
+
+</script>
+
+</body>
+</html>
